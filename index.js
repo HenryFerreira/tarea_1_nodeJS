@@ -1,12 +1,29 @@
 const express = require("express");
 const bodyParser = require("body-parser");
 const mongoose = require("mongoose");
+const morgan = require("morgan");
 const path = require("path");
 
 // 1) Cargar variables de entorno temprano
 require("dotenv").config({ path: path.resolve(process.cwd(), ".env") });
 
+const { logger } = require("./src/logger/logger");
+const requestId = require("./src/middlewares/requestId");
+const bus = require("./src/events/bus");
+
+
+const historial = require("./src/routes/historial.route");
+
 const app = express();
+
+// ---- middleware base ----
+app.use(requestId); // req.id para correlacionar logs
+app.use((req, res, next) => { res.locals.reqId = req.id; next(); });
+
+// Logs HTTP (morgan) → winston
+morgan.token("id", (req) => req.id);
+const httpFormat = ':id :method :url :status :res[content-length] - :response-time ms';
+app.use(morgan(httpFormat, { stream: logger.stream }));
 
 // CONEXIÓN A MONGO
 // 2) Tomar valores desde process.env (con defaults si querés)
@@ -42,9 +59,45 @@ app.use(bodyParser.urlencoded({ extended: false }));
 
 // RUTAS
 //app.use("/products", product);
+app.use("/historial", historial);
+
+
+// ---- listeners de eventos de dominio ----
+bus.on("materia:creada", (payload) => {
+  logger.info("materia:creada", { reqId: payload.reqId, materiaId: payload.materiaId, userId: payload.userId });
+});
+
+bus.on("historial:actualizado", (payload) => {
+  logger.info("historial:actualizado", { 
+    reqId: payload.reqId, 
+    usuario: payload.usuarioId,
+    materia: payload.materiaId, 
+    estado: payload.estado 
+  });
+});
+
+bus.on("auth:login", (payload) => {
+  logger.info("auth:login", { reqId: payload.reqId, userId: payload.userId });
+});
+
+// ---- manejador de errores central ----
+app.use((err, req, res, next) => {
+  logger.error("Unhandled error", { reqId: req.id, err });
+  res.status(err.status || 500).json({ error: "Internal Server Error", reqId: req.id });
+});
+
+
+// ---- errores no atrapados a nivel proceso ----
+process.on("unhandledRejection", (reason) => logger.error("unhandledRejection", { err: reason }));
+process.on("uncaughtException", (err) => {
+  logger.error("uncaughtException", { err });
+  process.exit(1);
+});
+
 
 // Vistas
 app.set('view engine', 'ejs');
 
+// ---- server ----
 //const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Servidor arriba en http://localhost:${PORT}`));
+app.listen(PORT, () => logger.info(`Servidor arriba en http://localhost:${PORT}`));
