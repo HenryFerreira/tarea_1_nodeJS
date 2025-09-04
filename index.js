@@ -13,6 +13,7 @@ const bus = require("./src/events/bus");
 
 
 const historial = require("./src/routes/historial.route");
+const usuario = require("./src/routes/usuario.route");
 
 const app = express();
 
@@ -60,6 +61,7 @@ app.use(bodyParser.urlencoded({ extended: false }));
 // RUTAS
 //app.use("/products", product);
 app.use("/historial", historial);
+app.use("/usuario", usuario);
 
 
 // ---- listeners de eventos de dominio ----
