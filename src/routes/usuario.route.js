@@ -10,12 +10,12 @@ router.post("/", usuario_controller.usuario_create);
 router.get("/", usuario_controller.usuario_list);
 
 // Obtener usuario por ID
-router.get("/usuario/:idUsuario", usuario_controller.usuario_by_id);
+router.get("/:id", usuario_controller.usuario_by_id);
 
 // Eliminar usuario por ID
-router.delete("/usuario/:idUsuario", usuario_controller.usuario_delete);
+router.delete("/:id", usuario_controller.usuario_delete);
 
 // Actualizar usuario por ID
-router.put("/usuario/:idUsuario", usuario_controller.usuario_update);
+router.put("/:id", usuario_controller.usuario_update);
 
 module.exports = router;
