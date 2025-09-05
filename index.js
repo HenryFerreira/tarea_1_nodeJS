@@ -16,12 +16,15 @@ const historial = require("./src/routes/historial.route");
 const usuario = require("./src/routes/usuario.route");
 const materia = require("./src/routes/materias.route");
 const auth = require("./src/routes/auth.routes");
+const devFakeAuth = require("./src/middlewares/devFakeAuth");
 
 const app = express();
 
 // ---- middleware base ----
 app.use(requestId); // req.id para correlacionar logs
 app.use((req, res, next) => { res.locals.reqId = req.id; next(); });
+// Activa auth falsa SOLO si DEV_FAKE_AUTH=1 y NO estás en producción
+app.use(devFakeAuth());
 
 // Logs HTTP (morgan) → winston
 morgan.token("id", (req) => req.id);
