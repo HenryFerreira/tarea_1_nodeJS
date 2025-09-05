@@ -1,33 +1,40 @@
+/**
+ * Router de Materias
+ * ==================
+ * Reglas de autorización:
+ * - Crear/actualizar/eliminar/gestionar previas/horarios => ADMIN
+ * - Listar y ver por id pueden ser públicos (o autenticados si preferís).
+ */
+
+
 const express = require("express");
 const router = express.Router();
-
 const materia_controller = require("../controllers/materia.controller");
+const { requireAuth, requireRole } = require("../middlewares/auth");
 
-// Crear materia
-router.post("/", materia_controller.materia_create);
+// Crear materia (ADMIN)
+router.post("/", requireAuth, requireRole("ADMIN"), materia_controller.materia_create);
 
-// Listar todas las materias (con filtros opcionales ?q=&semestre=&limit=&page=)
-router.get("/", materia_controller.materia_list);
+// Listar (público o autenticado, según tu consigna)
+/* requireAuth, */
+router.get("/",  materia_controller.materia_list);
 
-// Obtener materia por ID
-router.get("/:id", materia_controller.materia_by_id);
+// Ver por ID (público o autenticado)
+/* requireAuth, */
+router.get("/:id",  materia_controller.materia_by_id);
 
-// Actualizar materia por ID
-router.put("/:id", materia_controller.materia_update);
+// Actualizar (ADMIN)
+router.put("/:id", requireAuth, requireRole("ADMIN"), materia_controller.materia_update);
 
-// Eliminar materia por ID
-router.delete("/:id", materia_controller.materia_delete);
+// Eliminar (ADMIN)
+router.delete("/:id", requireAuth, requireRole("ADMIN"), materia_controller.materia_delete);
 
-// Agregar una previa a la materia (:id)
-router.post("/:id/previas", materia_controller.materia_add_previa);
+// Previas (ADMIN)
+router.post("/:id/previas", requireAuth, requireRole("ADMIN"), materia_controller.materia_add_previa);
+router.delete("/:id/previas", requireAuth, requireRole("ADMIN"), materia_controller.materia_remove_previa);
 
-// Eliminar una previa de la materia (:id) - body: { tipo, materiaPreviaId }
-router.delete("/:id/previas", materia_controller.materia_remove_previa);
-
-// Agregar un horario a la materia (:id)
-router.post("/:id/horarios", materia_controller.materia_add_horario);
-
-// Eliminar un horario de la materia (:id) - body: { dia, inicio, fin }
-router.delete("/:id/horarios", materia_controller.materia_remove_horario);
+// Horarios (ADMIN)
+router.post("/:id/horarios", requireAuth, requireRole("ADMIN"), materia_controller.materia_add_horario);
+router.delete("/:id/horarios", requireAuth, requireRole("ADMIN"), materia_controller.materia_remove_horario);
 
 module.exports = router;
