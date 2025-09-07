@@ -18,6 +18,7 @@ const materia = require("./src/routes/materias.route");
 const auth = require("./src/routes/auth.routes");
 const devFakeAuth = require("./src/middlewares/devFakeAuth");
 const elegibilidad = require("./src/routes/elegibilidad.routes");
+const seleccion = require("./src/routes/seleccion.routes");
 
 const app = express();
 
@@ -71,6 +72,7 @@ app.use("/usuario", usuario);
 app.use("/materia", materia);
 app.use("/auth", auth);
 app.use("/elegibilidad", elegibilidad);
+app.use("/seleccion", seleccion);
 
 
 
