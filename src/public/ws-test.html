@@ -1,0 +1,23 @@
+<!doctype html>
+<html>
+  <body>
+    <h1>WS Test</h1>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <script>
+      const ACCESS = prompt("Pega tu ACCESS TOKEN:");
+      const socket = io("http://localhost:3000", {
+        transports: ["websocket"],
+        auth: { token: ACCESS },
+      });
+
+      socket.on("connect", () => {
+        console.log("connect", socket.id);
+        socket.emit("ping", "hola desde el navegador");
+      });
+      socket.on("pong", (msg) => console.log("pong", msg));
+      socket.on("materia:creada", (e) => console.log("materia:creada", e));
+      socket.on("historial:actualizado", (e) => console.log("historial:actualizado", e));
+      socket.on("connect_error", (e) => console.log("connect_error", e.message));
+    </script>
+  </body>
+</html>

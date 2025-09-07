@@ -10,6 +10,8 @@ require("dotenv").config({ path: path.resolve(process.cwd(), ".env") });
 const { logger } = require("./src/logger/logger");
 const requestId = require("./src/middlewares/requestId");
 const bus = require("./src/events/bus");
+const { initSocket } = require("./src/sockets/socket");
+const cors = require("cors");
 
 
 const historial = require("./src/routes/historial.route");
@@ -62,6 +64,18 @@ db.once("open", () => console.log("MongoDB conectado"));
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: false }));
 
+const origins = (process.env.CORS_ORIGIN || "*")
+  .split(",").map(s => s.trim()).filter(Boolean);
+
+app.use(cors({
+  origin: origins,
+  credentials: true,
+  methods: ["GET","POST","PUT","DELETE","OPTIONS"],
+  allowedHeaders: ["Content-Type","Authorization"]
+}));
+
+app.use(express.static("src/public")); // sirve /ws-test.html
+
 // RUTAS
 //app.use("/products", product);
 app.use("/historial", historial);
@@ -109,6 +123,15 @@ process.on("uncaughtException", (err) => {
 // Vistas
 app.set('view engine', 'ejs');
 
+// 1) Crear httpServer
+const http = require("http");
+const httpServer = http.createServer(app);
+
+// 2) Inicializar Socket.IO
+const io = initSocket(httpServer); // devuelve instancia por si la querés usar
+
 // ---- server ----
-//const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => logger.info(`Servidor arriba en http://localhost:${PORT}`));
+// 3) Levantar server
+httpServer.listen(PORT, () => {
+  console.log(`Servidor arriba en http://localhost:${PORT}`);
+});
