@@ -15,7 +15,7 @@ const { requireAuth, requireRole } = require("../middlewares/auth");
 // Crear materia (ADMIN)
 router.post("/", requireAuth, requireRole("ADMIN"), materia_controller.materia_create);
 
-// Listar (público o autenticado, según tu consigna)
+// Listar (público o autenticado, según consigna)
 /* requireAuth, */
 router.get("/",  materia_controller.materia_list);
 

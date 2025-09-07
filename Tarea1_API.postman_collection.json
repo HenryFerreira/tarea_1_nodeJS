@@ -1,0 +1,455 @@
+{
+  "info": {
+    "_postman_id": "ae077e47-3b9d-4b42-99d4-2b19b0ef7a0a",
+    "name": "Tarea 1 API - Materias & Auth",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Colección Postman para la API de Tarea 1 (Auth, Materia, Historial, Elegibilidad y Selección)."
+  },
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Register (ADMIN)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json", "type": "text" }
+            ],
+            "url": "{{BASE_URL}}/auth/register",
+            "description": "Crea un usuario ADMIN y guarda ACCESS_TOKEN, REFRESH_TOKEN y USER_ID como variables de colección.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@example.com\",\n  \"password\": \"Admin123\",\n  \"nombre\": \"Admin\",\n  \"rol\": \"ADMIN\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json && json.accessToken) {",
+                  "  pm.collectionVariables.set(\"ACCESS_TOKEN\", json.accessToken);",
+                  "}",
+                  "if (json && json.refreshToken) {",
+                  "  pm.collectionVariables.set(\"REFRESH_TOKEN\", json.refreshToken);",
+                  "}",
+                  "if (json && json.user && json.user._id) {",
+                  "  pm.collectionVariables.set(\"USER_ID\", json.user._id);",
+                  "}",
+                  "pm.test(\"Registro OK\", function () {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200,201]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json", "type": "text" }
+            ],
+            "url": "{{BASE_URL}}/auth/login",
+            "description": "Login de usuario. Guarda ACCESS_TOKEN, REFRESH_TOKEN y USER_ID.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@example.com\",\n  \"password\": \"Admin123\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json && json.accessToken) {",
+                  "  pm.collectionVariables.set(\"ACCESS_TOKEN\", json.accessToken);",
+                  "}",
+                  "if (json && json.refreshToken) {",
+                  "  pm.collectionVariables.set(\"REFRESH_TOKEN\", json.refreshToken);",
+                  "}",
+                  "if (json && json.user && json.user._id) {",
+                  "  pm.collectionVariables.set(\"USER_ID\", json.user._id);",
+                  "}",
+                  "pm.test(\"Login OK\", function () {",
+                  "  pm.expect(pm.response.code).to.eql(200);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Refresh",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json", "type": "text" }
+            ],
+            "url": "{{BASE_URL}}/auth/refresh",
+            "description": "Rota el refresh y actualiza ACCESS_TOKEN y REFRESH_TOKEN.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{REFRESH_TOKEN}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json && json.accessToken) {",
+                  "  pm.collectionVariables.set(\"ACCESS_TOKEN\", json.accessToken);",
+                  "}",
+                  "if (json && json.refreshToken) {",
+                  "  pm.collectionVariables.set(\"REFRESH_TOKEN\", json.refreshToken);",
+                  "}",
+                  "pm.test(\"Refresh OK\", function () {",
+                  "  pm.expect(pm.response.code).to.eql(200);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json", "type": "text" }
+            ],
+            "url": "{{BASE_URL}}/auth/logout",
+            "description": "Revoca el refresh token actual.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{REFRESH_TOKEN}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Logout OK\", function () {",
+                  "  pm.expect(pm.response.code).to.eql(200);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Materia (ADMIN para ABM)",
+      "item": [
+        {
+          "name": "Crear Materia - Álgebra I",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}", "type": "text" },
+              { "key": "Content-Type", "value": "application/json", "type": "text" }
+            ],
+            "url": "{{BASE_URL}}/materia",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"codigo\": \"MAT101\",\n  \"nombre\": \"Álgebra I\",\n  \"creditos\": 8,\n  \"semestre\": 1,\n  \"horarios\": [\n    { \"dia\": \"LUN\", \"inicio\": \"18:00\", \"fin\": \"20:00\" }\n  ]\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json && json._id) {",
+                  "  pm.collectionVariables.set(\"MATERIA_ALG_ID\", json._id);",
+                  "  pm.collectionVariables.set(\"MATERIA_ID\", json._id);",
+                  "  pm.collectionVariables.set(\"MATERIA_ID_1\", json._id);",
+                  "}",
+                  "pm.test(\"Crear Álgebra I OK\", function () {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200,201]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Crear Materia - Cálculo I",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}", "type": "text" },
+              { "key": "Content-Type", "value": "application/json", "type": "text" }
+            ],
+            "url": "{{BASE_URL}}/materia",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"codigo\": \"MAT102\",\n  \"nombre\": \"Cálculo I\",\n  \"creditos\": 8,\n  \"semestre\": 1,\n  \"horarios\": [\n    { \"dia\": \"MAR\", \"inicio\": \"18:00\", \"fin\": \"20:00\" }\n  ]\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json && json._id) {",
+                  "  pm.collectionVariables.set(\"MATERIA_CAL_ID\", json._id);",
+                  "  pm.collectionVariables.set(\"MATERIA_ID_2\", json._id);",
+                  "  var alg = pm.collectionVariables.get(\"MATERIA_ALG_ID\");",
+                  "  if (alg) { pm.collectionVariables.set(\"MATERIA_PREVIA_ID\", alg); }",
+                  "}",
+                  "pm.test(\"Crear Cálculo I OK\", function () {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200,201]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Listar Materias",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}", "type": "text" }
+            ],
+            "url": "{{BASE_URL}}/materia"
+          }
+        },
+        {
+          "name": "Buscar Materias (q, semestre, limit, page)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}", "type": "text" }
+            ],
+            "url": "{{BASE_URL}}/materia?q=algebra&semestre=1&limit=10&page=1"
+          }
+        },
+        {
+          "name": "Obtener Materia por ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}", "type": "text" }
+            ],
+            "url": "{{BASE_URL}}/materia/{{MATERIA_ID}}"
+          }
+        },
+        {
+          "name": "Actualizar Materia por ID",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}", "type": "text" },
+              { "key": "Content-Type", "value": "application/json", "type": "text" }
+            ],
+            "url": "{{BASE_URL}}/materia/{{MATERIA_ID}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombre\": \"Álgebra I (Actualizada)\",\n  \"creditos\": 10\n}"
+            }
+          }
+        },
+        {
+          "name": "Eliminar Materia por ID",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}", "type": "text" }
+            ],
+            "url": "{{BASE_URL}}/materia/{{MATERIA_ID}}"
+          }
+        },
+        {
+          "name": "Agregar Previa (CAL ← ALG)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}", "type": "text" },
+              { "key": "Content-Type", "value": "application/json", "type": "text" }
+            ],
+            "url": "{{BASE_URL}}/materia/{{MATERIA_CAL_ID}}/previas",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"EXAMEN\",\n  \"materiaPreviaId\": \"{{MATERIA_ALG_ID}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Eliminar Previa (CAL ← ALG)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}", "type": "text" },
+              { "key": "Content-Type", "value": "application/json", "type": "text" }
+            ],
+            "url": "{{BASE_URL}}/materia/{{MATERIA_CAL_ID}}/previas",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"EXAMEN\",\n  \"materiaPreviaId\": \"{{MATERIA_ALG_ID}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Agregar Horario a Álgebra I",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}", "type": "text" },
+              { "key": "Content-Type", "value": "application/json", "type": "text" }
+            ],
+            "url": "{{BASE_URL}}/materia/{{MATERIA_ALG_ID}}/horarios",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"dia\": \"MIE\",\n  \"inicio\": \"19:00\",\n  \"fin\": \"21:00\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Eliminar Horario de Álgebra I",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}", "type": "text" },
+              { "key": "Content-Type", "value": "application/json", "type": "text" }
+            ],
+            "url": "{{BASE_URL}}/materia/{{MATERIA_ALG_ID}}/horarios",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"dia\": \"MIE\",\n  \"inicio\": \"19:00\",\n  \"fin\": \"21:00\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Historial",
+      "item": [
+        {
+          "name": "Crear Historial (manual)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}", "type": "text" },
+              { "key": "Content-Type", "value": "application/json", "type": "text" }
+            ],
+            "url": "{{BASE_URL}}/historial",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"usuario\": \"{{USER_ID}}\",\n  \"materia\": \"{{MATERIA_ALG_ID}}\",\n  \"estado\": \"EN_CURSO\",\n  \"notaExamen\": 10,\n  \"fecha\": \"2025-09-01T00:00:00.000Z\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Listar Historial",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}", "type": "text" }
+            ],
+            "url": "{{BASE_URL}}/historial"
+          }
+        },
+        {
+          "name": "Historial por Usuario",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}", "type": "text" }
+            ],
+            "url": "{{BASE_URL}}/historial/usuario/{{USER_ID}}"
+          }
+        },
+        {
+          "name": "Upsert Historial (req.user)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}", "type": "text" },
+              { "key": "Content-Type", "value": "application/json", "type": "text" }
+            ],
+            "url": "{{BASE_URL}}/historial/upsert",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"materia\": \"{{MATERIA_ALG_ID}}\",\n  \"estado\": \"APROBADO\",\n  \"notaExamen\": 11,\n  \"fecha\": \"2025-09-02T00:00:00.000Z\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Elegibilidad",
+      "item": [
+        {
+          "name": "Ver elegibilidad (todas)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}", "type": "text" }
+            ],
+            "url": "{{BASE_URL}}/elegibilidad"
+          }
+        },
+        {
+          "name": "Ver elegibilidad por semestre",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}", "type": "text" }
+            ],
+            "url": "{{BASE_URL}}/elegibilidad?semestre=1"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Selección / Choques",
+      "item": [
+        {
+          "name": "Verificar selección (choques + carga)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}", "type": "text" },
+              { "key": "Content-Type", "value": "application/json", "type": "text" }
+            ],
+            "url": "{{BASE_URL}}/seleccion/verificar",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"materias\": [\"{{MATERIA_ALG_ID}}\", \"{{MATERIA_CAL_ID}}\"]\n}"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    { "key": "BASE_URL", "value": "http://localhost:3000", "type": "string" },
+    { "key": "ACCESS_TOKEN", "value": "", "type": "string" },
+    { "key": "REFRESH_TOKEN", "value": "", "type": "string" },
+    { "key": "USER_ID", "value": "", "type": "string" },
+    { "key": "MATERIA_ID", "value": "", "type": "string" },
+    { "key": "MATERIA_PREVIA_ID", "value": "", "type": "string" },
+    { "key": "MATERIA_ALG_ID", "value": "", "type": "string" },
+    { "key": "MATERIA_CAL_ID", "value": "", "type": "string" },
+    { "key": "MATERIA_ID_1", "value": "", "type": "string" },
+    { "key": "MATERIA_ID_2", "value": "", "type": "string" }
+  ]
+}
