@@ -11,6 +11,7 @@ const { Types } = require("mongoose");
 const Historial = require("../models/historial.model");
 const { logger } = require("../logger/logger");
 const bus = require("../events/bus");
+const { calcularCreditos } = require("../services/creditos.service");
 
 // Helper: serializa un historial con campos públicos (y respeta populate si existe)
 function toPublicHistorial(h) {
@@ -172,6 +173,51 @@ exports.historial_upsert = async (req, res, next) => {
     });
 
     res.json(toPublicHistorial(doc));
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * GET /historial/creditos
+ * -----------------------
+ * Suma créditos del usuario autenticado.
+ * Query (opcionales):
+ *  - estados: coma-separado (ej: "APROBADO" | "APROBADO,CURSADO")
+ *  - hastaSemestre: número (ej: 3) para filtrar materias hasta cierto semestre
+ *
+ * Respuesta:
+ *  { totalCreditos: number, detalle: [ { materiaId, codigo, nombre, semestre, creditos, estado, fecha } ] }
+ */
+exports.historial_creditos = async (req, res, next) => {
+  try {
+    if (!req.user?._id) {
+      return res.status(401).json({ error: "No autenticado", reqId: req.id });
+    }
+
+    const { estados, hastaSemestre } = req.query;
+
+    const result = await calcularCreditos({
+      usuarioId: req.user._id,
+      estados: estados || undefined,
+      hastaSemestre: (hastaSemestre != null) ? Number(hastaSemestre) : undefined,
+    });
+
+    logger.info("Créditos consultados", {
+      reqId: req.id,
+      userId: req.user._id,
+      estados: estados || "APROBADO",
+      hastaSemestre: hastaSemestre ?? null,
+      totalCreditos: result.totalCreditos,
+    });
+
+    bus.emit("creditos:consultados", {
+      reqId: req.id,
+      userId: req.user._id,
+      filtros: { estados: estados || "APROBADO", hastaSemestre: hastaSemestre ?? null }
+    });
+
+    res.json(result);
   } catch (err) {
     next(err);
   }

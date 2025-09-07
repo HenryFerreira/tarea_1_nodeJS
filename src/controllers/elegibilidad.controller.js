@@ -4,6 +4,7 @@
  */
 
 const { calcularElegibilidad } = require("../services/elegibilidad.service");
+const { calcularCreditos } = require("../services/creditos.service");
 const { logger } = require("../logger/logger");
 const bus = require("../events/bus");
 
@@ -16,10 +17,19 @@ exports.getElegibilidad = async (req, res, next) => {
 
     const { semestre } = req.query; // opcional
 
-    const result = await calcularElegibilidad({
-      usuarioId: req.user._id,
-      semestre: semestre != null ? Number(semestre) : undefined,
-    });
+    const [elig, creds] = await Promise.all([
+      calcularElegibilidad({ usuarioId: req.user._id, semestre: semestre != null ? Number(semestre) : undefined }),
+      calcularCreditos({ usuarioId: req.user._id }) // por defecto, APROBADO
+    ]);
+
+    // Anexamos créditos al resumen:
+    const result = {
+      ...elig,
+      resumen: {
+        ...elig.resumen,
+        creditosAprobados: creds.totalCreditos
+      }
+    };
 
     // Log + evento de dominio
     logger.info("Elegibilidad consultada", {

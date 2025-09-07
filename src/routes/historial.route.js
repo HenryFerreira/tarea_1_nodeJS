@@ -16,4 +16,7 @@ router.get("/usuario/:idUsuario", requireAuth, historial_controller.historial_by
 //Upsert requiere usuario autenticado (usa req.user._id)
 router.post("/upsert", requireAuth, historial_controller.historial_upsert);
 
+//Créditos del usuario autenticado
+router.get("/creditos", requireAuth, historial_controller.historial_creditos);
+
 module.exports = router;
