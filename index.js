@@ -20,6 +20,7 @@ const materia = require("./src/routes/materias.route");
 const auth = require("./src/routes/auth.routes");
 const elegibilidad = require("./src/routes/elegibilidad.routes");
 const seleccion = require("./src/routes/seleccion.routes");
+const uiRoutes = require('./src/routes/ui.routes');   // 🆕 vistas EJS
 
 const app = express();
 
@@ -84,7 +85,7 @@ app.use("/materia", materia);
 app.use("/auth", auth);
 app.use("/elegibilidad", elegibilidad);
 app.use("/seleccion", seleccion);
-
+app.use('/', uiRoutes);                 // 🆕 vistas: "/", "/admin"
 
 
 // ---- listeners de eventos de dominio ----
@@ -122,6 +123,8 @@ process.on("uncaughtException", (err) => {
 
 // Vistas
 app.set('view engine', 'ejs');
+app.set('views', path.join(__dirname, 'src', 'views'));
+app.use(express.static(path.join(__dirname, 'src', 'public')));
 
 // 1) Crear httpServer
 const http = require("http");

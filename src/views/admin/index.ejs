@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Panel Admin — Materias</title>
+  <style>
+    body{font-family:system-ui,Arial,sans-serif;margin:0;background:#f7f7f9;color:#222}
+    header,nav{background:#0f172a;color:#fff}
+    header{padding:12px 16px}
+    .container{max-width:1100px;margin:0 auto;padding:0 16px}
+    .card{background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:16px;margin:16px 0}
+    .btn{display:inline-block;padding:6px 10px;border-radius:6px;border:1px solid #d1d5db;background:#fff;cursor:pointer}
+    .btn.primary{background:#2563eb;border-color:#2563eb;color:#fff}
+    .btn.danger{background:#ef4444;border-color:#ef4444;color:#fff}
+    input,select{padding:6px;border:1px solid #d1d5db;border-radius:6px}
+    table{width:100%;border-collapse:collapse}
+    th,td{border-bottom:1px solid #eee;padding:8px;text-align:left;vertical-align:top}
+    .grid{display:grid;gap:12px}
+    .grid-2{grid-template-columns:1fr 1fr}
+    .muted{color:#6b7280}
+    .badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:12px;border:1px solid #e5e7eb;background:#f3f4f6}
+    details{margin:8px 0}
+    summary{cursor:pointer}
+  </style>
+</head>
+<body>
+<header><div class="container">
+  <h2>Panel de administración</h2>
+  <p class="muted">Gestión de materias, previas y horarios</p>
+</div></header>
+
+<div class="container">
+
+  <!-- Aviso de acceso -->
+  <div id="guard" class="card" style="display:none">
+    <h3>Acceso restringido</h3>
+    <p>Necesitas iniciar sesión con un usuario <b>ADMIN</b> para gestionar el catálogo.</p>
+    <p class="muted">Obtén tu <i>access token</i> haciendo <code>POST /auth/login</code> y guarda el token como <code>localStorage.access</code>.</p>
+  </div>
+
+  <!-- Crear materia -->
+  <div id="createBox" class="card" style="display:none">
+    <h3>Nueva materia</h3>
+    <form id="createForm" class="grid grid-2">
+      <label>Código <input name="codigo" required></label>
+      <label>Nombre <input name="nombre" required></label>
+      <label>Créditos <input type="number" name="creditos" required></label>
+      <label>Semestre <input type="number" name="semestre" required></label>
+      <div>
+        <button class="btn primary" type="submit">Crear</button>
+      </div>
+      <p id="createMsg" class="muted"></p>
+    </form>
+  </div>
+
+  <!-- Listado -->
+  <div id="listBox" class="card" style="display:none">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <h3>Materias</h3>
+      <div>
+        <input type="search" id="q" placeholder="buscar código/nombre"/>
+        <button class="btn" id="btnBuscar">Buscar</button>
+      </div>
+    </div>
+    <table id="tbl">
+      <thead>
+        <tr><th style="width:110px">Código</th><th>Nombre</th><th>Créditos</th><th>Sem.</th><th style="width:350px">Acciones</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+    <p id="listMsg" class="muted"></p>
+  </div>
+
+</div>
+
+<script>
+/* ===== Helpers de sesión (cliente) ===== */
+function getAccessToken(){ return localStorage.getItem('access'); }
+function getClaims(){
+  const t = getAccessToken(); if(!t) return null;
+  try{ return JSON.parse(atob(t.split('.')[1]||'')); }catch(e){ return null; }
+}
+function apiFetch(url, opts={}){
+  const headers = {'Content-Type':'application/json', ...(opts.headers||{})};
+  const t = getAccessToken();
+  if(t) headers.Authorization = 'Bearer ' + t;
+  return fetch(url, { ...opts, headers });
+}
+
+/* ===== Guard de ADMIN ===== */
+const claims = getClaims();
+const isAdmin = !!(claims && claims.rol === 'ADMIN');
+document.getElementById('guard').style.display = isAdmin ? 'none' : '';
+document.getElementById('createBox').style.display = isAdmin ? '' : 'none';
+document.getElementById('listBox').style.display   = isAdmin ? '' : 'none';
+if(!isAdmin) { /* no sigas cargando */ }
+
+/* ===== UI ===== */
+const tbody  = document.querySelector('#tbl tbody');
+const qInput = document.getElementById('q');
+document.getElementById('btnBuscar').onclick = load;
+
+document.getElementById('createForm').addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const body = Object.fromEntries(fd.entries());
+  body.creditos = Number(body.creditos);
+  body.semestre = Number(body.semestre);
+
+  const r = await apiFetch('/api/materias', { method:'POST', body: JSON.stringify(body) });
+  const data = await r.json();
+  const msg = document.getElementById('createMsg');
+  if(!r.ok){ msg.textContent = data?.error || 'Error creando materia'; return; }
+  msg.textContent = 'OK: ' + (data?.nombre||'');
+  e.target.reset();
+  load();
+});
+
+async function load(){
+  const url = '/api/materias' + (qInput.value ? ('?q='+encodeURIComponent(qInput.value)) : '');
+  const r = await apiFetch(url);
+  const data = await r.json();
+  if(!r.ok){ document.getElementById('listMsg').textContent = data?.error || 'Error listando'; return; }
+  render(Array.isArray(data.items) ? data.items : (Array.isArray(data) ? data : []));
+}
+
+function render(items){
+  tbody.innerHTML = '';
+  items.forEach(m => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><b>${m.codigo}</b></td>
+      <td>${m.nombre}</td>
+      <td>${m.creditos}</td>
+      <td>${m.semestre}</td>
+      <td>
+        <button class="btn" data-act="previas">Previas</button>
+        <button class="btn" data-act="horarios">Horarios</button>
+        <button class="btn" data-act="editar">Editar</button>
+        <button class="btn danger" data-act="eliminar">Eliminar</button>
+      </td>
+    `;
+    // Paneles de gestión (previas y horarios)
+    const td = document.createElement('td'); // vacío, lo usamos con details
+    const detailsPrev = document.createElement('details');
+    const detailsHor  = document.createElement('details');
+    detailsPrev.style.gridColumn = '1 / -1';
+    detailsHor.style.gridColumn  = '1 / -1';
+    detailsPrev.innerHTML = `
+      <summary>Gestionar previas</summary>
+      <div class="muted">Agregar: 
+        <select data-role="tipo">
+          <option value="CURSO">CURSO</option>
+          <option value="EXAMEN">EXAMEN</option>
+        </select>
+        <select data-role="materiaPrev"></select>
+        <button class="btn" data-role="addPrevia">Agregar previa</button>
+      </div>
+      <ul data-role="previas"></ul>
+    `;
+    detailsHor.innerHTML = `
+      <summary>Gestionar horarios</summary>
+      <div class="muted">Agregar: 
+        <select data-role="dia">
+          <option>LUN</option><option>MAR</option><option>MIE</option>
+          <option>JUE</option><option>VIE</option><option>SAB</option>
+        </select>
+        <input type="time" data-role="inicio" required>
+        <input type="time" data-role="fin" required>
+        <button class="btn" data-role="addHorario">Agregar horario</button>
+      </div>
+      <ul data-role="horarios"></ul>
+    `;
+    const row = document.createElement('tr');
+    row.appendChild(document.createElement('td')); // col 1 vacía
+    const span = document.createElement('td');
+    span.colSpan = 4;
+    span.appendChild(detailsPrev);
+    span.appendChild(detailsHor);
+    row.appendChild(span);
+
+    // Acciones fila
+    tr.querySelector('[data-act=eliminar]').onclick = async ()=>{
+      if(!confirm('¿Eliminar materia '+m.nombre+'?')) return;
+      const r = await apiFetch('/api/materias/'+m._id, { method:'DELETE' });
+      if(!r.ok){ alert('Error eliminando'); return; }
+      load();
+    };
+    tr.querySelector('[data-act=editar]').onclick = async ()=>{
+      const nombre = prompt('Nuevo nombre', m.nombre);
+      if(nombre == null) return;
+      const creditos = Number(prompt('Créditos', m.creditos));
+      const semestre = Number(prompt('Semestre', m.semestre));
+      const r = await apiFetch('/api/materias/'+m._id, { method:'PUT', body: JSON.stringify({ nombre, creditos, semestre }) });
+      if(!r.ok){ alert('Error editando'); return; }
+      load();
+    };
+    tr.querySelector('[data-act=previas]').onclick  = ()=> detailsPrev.open = !detailsPrev.open;
+    tr.querySelector('[data-act=horarios]').onclick = ()=> detailsHor.open = !detailsHor.open;
+
+    // Poblar selects de previas con el listado completo (re-usa cache)
+    detailsPrev.addEventListener('toggle', async ()=>{
+      if(detailsPrev.open){
+        const sel = detailsPrev.querySelector('[data-role=materiaPrev]');
+        sel.innerHTML = window.__allMaterias.map(x=>`<option value="${x._id}">${x.codigo} - ${x.nombre}</option>`).join('');
+        await renderPrevias(m, detailsPrev.querySelector('[data-role=previas]'));
+      }
+    });
+    detailsHor.addEventListener('toggle', async ()=>{
+      if(detailsHor.open){
+        await renderHorarios(m, detailsHor.querySelector('[data-role=horarios]'));
+      }
+    });
+
+    // Handlers agregar
+    detailsPrev.querySelector('[data-role=addPrevia]').onclick = async ()=>{
+      const tipo = detailsPrev.querySelector('[data-role=tipo]').value;
+      const materiaPreviaId = detailsPrev.querySelector('[data-role=materiaPrev]').value;
+      const r = await apiFetch(`/api/materias/${m._id}/previas`, { method:'POST', body: JSON.stringify({ tipo, materiaPreviaId }) });
+      if(!r.ok){ alert('Error agregando previa'); return; }
+      await renderPrevias(m, detailsPrev.querySelector('[data-role=previas]'), true);
+    };
+    detailsHor.querySelector('[data-role=addHorario]').onclick = async ()=>{
+      const dia    = detailsHor.querySelector('[data-role=dia]').value;
+      const inicio = detailsHor.querySelector('[data-role=inicio]').value;
+      const fin    = detailsHor.querySelector('[data-role=fin]').value;
+      const r = await apiFetch(`/api/materias/${m._id}/horarios`, { method:'POST', body: JSON.stringify({ dia, inicio, fin }) });
+      if(!r.ok){ alert('Error agregando horario'); return; }
+      await renderHorarios(m, detailsHor.querySelector('[data-role=horarios]'), true);
+    };
+
+    tbody.appendChild(tr);
+    tbody.appendChild(row);
+  });
+}
+
+async function renderPrevias(m, ul, reloadMaterias){
+  if(reloadMaterias) await loadAllMaterias();
+  // traemos la materia actual para obtener previas actualizadas
+  const r = await apiFetch('/api/materias?q='+encodeURIComponent(m.codigo));
+  const data = await r.json();
+  const full = (data.items||[]).find(x=>x._id===m._id) || m;
+  m.previas = full.previas || [];
+  ul.innerHTML = '';
+  (m.previas||[]).forEach(p=>{
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="badge">${p.tipo}</span> ${(p.materia?.codigo||'')} - ${(p.materia?.nombre||'')}`;
+    const b = document.createElement('button'); b.className='btn danger'; b.textContent='Quitar';
+    b.onclick = async ()=>{
+      const r = await apiFetch(`/api/materias/${m._id}/previas`, { method:'DELETE', body: JSON.stringify({ tipo:p.tipo, materiaPreviaId: p.materia?._id || p.materia }) });
+      if(!r.ok){ alert('Error quitando previa'); return; }
+      await renderPrevias(m, ul, true);
+    };
+    li.appendChild(b);
+    ul.appendChild(li);
+  });
+}
+
+async function renderHorarios(m, ul){
+  // mismo truco: refrescar horarios
+  const r = await apiFetch('/api/materias?q='+encodeURIComponent(m.codigo));
+  const data = await r.json();
+  const full = (data.items||[]).find(x=>x._id===m._id) || m;
+  m.horarios = full.horarios || [];
+  ul.innerHTML = '';
+  (m.horarios||[]).forEach(h=>{
+    const li = document.createElement('li');
+    li.innerHTML = `${h.dia} ${h.inicio} - ${h.fin}`;
+    const b = document.createElement('button'); b.className='btn danger'; b.textContent='Quitar';
+    b.onclick = async ()=>{
+      const r = await apiFetch(`/api/materias/${m._id}/horarios`, { method:'DELETE', body: JSON.stringify({ dia:h.dia, inicio:h.inicio, fin:h.fin }) });
+      if(!r.ok){ alert('Error quitando horario'); return; }
+      await renderHorarios(m, ul);
+    };
+    li.appendChild(b);
+    ul.appendChild(li);
+  });
+}
+
+// cache para selector de previas
+async function loadAllMaterias(){
+  const r = await apiFetch('/api/materias?limit=1000&page=1');
+  const data = await r.json();
+  window.__allMaterias = (data.items || data || []);
+}
+
+(async ()=>{
+  if(!isAdmin) return;
+  await loadAllMaterias();
+  await load();
+})();
+</script>
+
+</body></html>
