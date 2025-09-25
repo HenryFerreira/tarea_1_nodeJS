@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Tablero estudiante</title>
+  <link rel="stylesheet" href="https://unpkg.com/mvp.css" />
+  <style>
+    .topbar {
+      display:flex; align-items:center; justify-content:space-between;
+      background:#0f172a; color:#fff; padding:14px 18px; border-radius:8px;
+    }
+    .topbar a.btn { background:#1f2937; color:#fff; padding:8px 12px; border-radius:6px; }
+    .badge { display:inline-block; padding:.2rem .5rem; border-radius:.4rem; background:#eef; }
+    .pill  { display:inline-block; padding:.15rem .5rem; border-radius:999px; font-size:.8rem; }
+    .pill.ok { background:#dcfce7; color:#166534; }
+    .pill.no { background:#fee2e2; color:#991b1b; }
+    .row-actions { white-space:nowrap; }
+    dialog[open] { border:0; border-radius:10px; box-shadow:0 10px 30px rgba(0,0,0,.25); }
+    table td, table th { vertical-align: middle; }
+    .subtle { color:#6b7280; font-size:.95rem; margin-top:-6px; }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <strong>Panel de estudiante</strong><br/>
+      <span class="subtle">Gestión de historial, créditos y elegibilidad</span>
+    </div>
+    <nav>
+      <a class="btn" href="/admin">Admin</a>
+      <a class="btn" href="/logout">Salir</a>
+    </nav>
+  </header>
+
+  <main>
+    <section>
+      <header>
+        <h2>Mi resumen</h2>
+        <p class="subtle">Créditos aprobados y elegibilidad general.</p>
+      </header>
+      <p>
+        Créditos aprobados: <span id="creditos" class="badge">—</span>
+        &nbsp;|&nbsp;
+        Materias elegibles ahora: <span id="elegibles" class="badge">—</span>
+        de <span id="eligTotal" class="badge">—</span>
+      </p>
+    </section>
+
+    <section>
+      <header>
+        <h2>Materias del plan</h2>
+        <p class="subtle">Elige tu estado por materia. Se guarda en tu historial.</p>
+      </header>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Código</th>
+            <th>Nombre</th>
+            <th>Créditos</th>
+            <th>Sem.</th>
+            <th>Elegible</th>
+            <th>Mi estado</th>
+            <th class="row-actions">Acciones</th>
+          </tr>
+        </thead>
+        <tbody id="materiasBody">
+          <tr><td colspan="7">Cargando...</td></tr>
+        </tbody>
+      </table>
+      <p id="sinMaterias" style="display:none">Sin materias.</p>
+    </section>
+
+    <section>
+      <header>
+        <h2>Mi historial</h2>
+        <p class="subtle">Estados actuales registrados.</p>
+      </header>
+      <table>
+        <thead>
+          <tr>
+            <th>Código</th>
+            <th>Nombre</th>
+            <th>Estado</th>
+            <th class="row-actions">Acciones</th>
+          </tr>
+        </thead>
+        <tbody id="historialBody">
+          <tr><td colspan="4">Cargando...</td></tr>
+        </tbody>
+      </table>
+    </section>
+  </main>
+
+  <dialog id="dlgError">
+    <article>
+      <header><strong>Error</strong></header>
+      <p id="dlgErrorMsg">Ocurrió un error.</p>
+      <footer><button onclick="dlgError.close()">Cerrar</button></footer>
+    </article>
+  </dialog>
+
+<script>
+  // === helpers ===
+  function showError(msg) {
+    const d = document.getElementById('dlgError');
+    document.getElementById('dlgErrorMsg').textContent = msg || 'Error';
+    d.showModal();
+  }
+
+  function claims(jwt) {
+    try {
+      const b = jwt.split('.')[1];
+      return JSON.parse(atob(b.replace(/-/g, '+').replace(/_/g, '/')));
+    } catch { return {}; }
+  }
+
+  async function apiFetch(url, opts = {}) {
+    const token = localStorage.access;
+    const headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
+    if (token) headers.Authorization = 'Bearer ' + token;
+    const res = await fetch(url, Object.assign({}, opts, { headers }));
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data?.error || ('HTTP ' + res.status));
+    }
+    return res.json();
+  }
+
+  const ESTADOS = ['PENDIENTE','EN_CURSO','CURSADO','APROBADO'];
+
+  // === state ===
+  let materias = [];
+  let historial = [];     // [{ materia, estado }]
+  let mapEstado = new Map(); // materiaId -> estado
+  let eligMap = new Map();   // materiaId -> { elegible, motivos[] }
+  let userId = null;
+
+  // === load ===
+  async function loadAll() {
+    const token = localStorage.access;
+    if (!token) return location.replace('/login');
+    const c = claims(token);
+    userId = c.sub;
+
+    // 1) materias
+    const mres = await apiFetch('/api/materias?limit=1000');
+    materias = (mres?.items || mres || []).sort((a,b)=> (a.codigo||'').localeCompare(b.codigo||''));
+
+    // 2) historial del usuario
+    const hres = await apiFetch(`/api/historial/usuario/${userId}`);
+    historial = Array.isArray(hres) ? hres : (hres?.items || []);
+    mapEstado = new Map(historial.map(h => [String(h.materia?._id || h.materia), h.estado]));
+
+    // 3) créditos
+    const cres = await apiFetch('/api/historial/creditos');
+    document.getElementById('creditos').textContent = cres?.totalCreditos ?? 0;
+
+    // 4) elegibilidad (requiere token) -> resumen y por materia
+    try {
+      const eres = await apiFetch('/elegibilidad'); // protegido por requireAuth :contentReference[oaicite:3]{index=3}
+      const total = eres?.resumen?.totalMaterias ?? materias.length;
+      const elegibles = eres?.resumen?.elegibles ?? 0;
+      document.getElementById('eligTotal').textContent = total;
+      document.getElementById('elegibles').textContent = elegibles;
+      eligMap = new Map((eres?.materias || []).map(x => [String(x.materia?._id || x.materia), { elegible: !!x.elegible, motivos: x.motivos || [] }]));
+    } catch (err) {
+      // si falla elegibilidad, no rompemos la pantalla
+      console.warn('Elegibilidad no disponible:', err.message);
+      document.getElementById('eligTotal').textContent = materias.length;
+      document.getElementById('elegibles').textContent = '—';
+    }
+
+    renderMaterias();
+    renderHistorial();
+  }
+
+  function renderMaterias() {
+    const body = document.getElementById('materiasBody');
+    body.innerHTML = '';
+    if (!materias.length) {
+      document.getElementById('sinMaterias').style.display = 'block';
+      body.innerHTML = '<tr><td colspan="7">Sin materias.</td></tr>';
+      return;
+    }
+    document.getElementById('sinMaterias').style.display = 'none';
+
+    for (const m of materias) {
+      const id = String(m._id);
+      const estadoActual = mapEstado.get(id) || 'PENDIENTE';
+      const elig = eligMap.get(id);
+      const elegible = elig ? elig.elegible : '—';
+
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${m.codigo || ''}</td>
+        <td>${m.nombre || ''}</td>
+        <td>${m.creditos ?? '-'}</td>
+        <td>${m.semestre ?? '-'}</td>
+        <td>${elegible === '—' ? '—'
+              : elegible ? '<span class="pill ok">Sí</span>'
+                         : '<span class="pill no" title="'+(elig?.motivos?.join(' · ')||'No elegible')+'">No</span>'}
+        </td>
+        <td>
+          <select data-id="${id}">
+            ${ESTADOS.map(e => `<option value="${e}" ${e===estadoActual?'selected':''}>${e}</option>`).join('')}
+          </select>
+        </td>
+        <td class="row-actions">
+          <button data-save="${id}">Guardar</button>
+        </td>
+      `;
+      body.appendChild(tr);
+    }
+
+    // listeners de “Guardar”
+    body.querySelectorAll('button[data-save]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id = btn.getAttribute('data-save');
+        const sel = body.querySelector(`select[data-id="${id}"]`);
+        const estado = sel.value;
+        try {
+          await apiFetch('/api/historial/upsert', {
+            method: 'POST',
+            body: JSON.stringify({ materia: id, estado })
+          }); // (upsert del historial del usuario autenticado)  :contentReference[oaicite:4]{index=4}
+          // refrescar cache local
+          mapEstado.set(id, estado);
+          await loadAll(); // actualiza historial + créditos + elegibilidad
+        } catch (err) {
+          showError(err.message || 'No se pudo guardar');
+        }
+      });
+    });
+  }
+
+  function renderHistorial() {
+    const body = document.getElementById('historialBody');
+    body.innerHTML = '';
+    if (!historial.length) {
+      body.innerHTML = '<tr><td colspan="4">Aún no registraste materias en tu historial.</td></tr>';
+      return;
+    }
+    const mById = new Map(materias.map(m => [String(m._id), m]));
+    for (const h of historial) {
+      const id = String(h.materia?._id || h.materia);
+      const m = mById.get(id) || {};
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${m.codigo || ''}</td>
+        <td>${m.nombre || ''}</td>
+        <td>
+          <select data-hid="${id}">
+            ${ESTADOS.map(e => `<option value="${e}" ${e===h.estado?'selected':''}>${e}</option>`).join('')}
+          </select>
+        </td>
+        <td class="row-actions">
+          <button data-update="${id}">Actualizar</button>
+        </td>
+      `;
+      body.appendChild(tr);
+    }
+
+    body.querySelectorAll('button[data-update]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id = btn.getAttribute('data-update');
+        const sel = body.querySelector(`select[data-hid="${id}"]`);
+        const estado = sel.value;
+        try {
+          await apiFetch('/api/historial/upsert', {
+            method: 'POST',
+            body: JSON.stringify({ materia: id, estado })
+          });
+          await loadAll();
+        } catch (err) {
+          showError(err.message || 'No se pudo actualizar');
+        }
+      });
+    });
+  }
+
+  // init
+  loadAll().catch(err => showError(err.message || 'No se pudo cargar'));
+</script>
+</body>
+</html>

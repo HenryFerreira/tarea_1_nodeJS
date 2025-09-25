@@ -5,6 +5,11 @@ router.get('/', (req, res) => res.redirect('/login'));  // Home: redirige a logi
 
 router.get('/admin', (req, res) => res.render('admin/index')); // Home = panel de administración (la vista se auto-protege en cliente)
 
+// Student dashboard
+router.get('/student', (req, res) => {
+  res.render('student/index');
+});
+
 // GET /login  -> renderiza la página de inicio de sesión
 router.get('/login', (req, res) => {
   res.render('auth/login', { title: 'Iniciar sesión' });
