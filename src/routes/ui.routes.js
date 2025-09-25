@@ -1,9 +1,9 @@
 const { Router } = require('express');
 const router = Router();
 
-// Home = panel de administración (la vista se auto-protege en cliente)
-router.get('/',      (req, res) => res.render('admin/index'));
-router.get('/admin', (req, res) => res.render('admin/index'));
+router.get('/', (req, res) => res.redirect('/login'));  // Home: redirige a login y, tras loguear, va a /admin
+
+router.get('/admin', (req, res) => res.render('admin/index')); // Home = panel de administración (la vista se auto-protege en cliente)
 
 // GET /login  -> renderiza la página de inicio de sesión
 router.get('/login', (req, res) => {
