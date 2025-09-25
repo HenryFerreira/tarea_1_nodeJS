@@ -10,6 +10,16 @@ router.get('/login', (req, res) => {
   res.render('auth/login', { title: 'Iniciar sesión' });
 });
 
+// Registro y logout (vistas)
+router.get('/register', (req, res) => {
+  res.render('auth/register', { title: 'Crear cuenta' });
+});
+
+router.get('/logout', (req, res) => {
+  res.render('auth/logout', { title: 'Cerrar sesión' });
+});
+
+
 module.exports = router;
 
 
