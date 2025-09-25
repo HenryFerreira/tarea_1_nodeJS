@@ -20,11 +20,9 @@
       <span class="navbar-brand mb-0 h5">Panel de administración</span>
       <a class="btn btn-outline-light btn-sm ms-auto" href="/logout">Salir</a>
     </div>
-    <!-- subtítulo debajo del título -->
     <div class="text-light small">Gestión de materias, previas y horarios</div>
   </div>
 </nav>
-
 
 <main class="container my-4">
 
@@ -34,30 +32,41 @@
     <p class="mb-0">Necesitás iniciar sesión con un usuario <b>ADMIN</b> para gestionar el catálogo.</p>
   </div>
 
-  <!-- Crear materia -->
+  <!-- Crear / Actualizar materia -->
   <section id="createBox" class="card shadow-sm mb-4 d-none">
     <div class="card-body">
-      <h5 class="card-title">Nueva materia</h5>
-      <form id="createForm" class="row g-3">
+      <div class="d-flex align-items-center justify-content-between">
+        <h5 class="card-title mb-0">
+          <span id="formTitle">Nueva materia</span>
+          <span id="editingBadge" class="badge text-bg-warning ms-2 d-none">Editando…</span>
+        </h5>
+        <span id="createMsg" class="muted"></span>
+      </div>
+
+      <form id="createForm" class="row g-3 mt-1">
+        <!-- Guardamos el id cuando estamos editando -->
+        <input type="hidden" id="editingId" />
+
         <div class="col-md-3">
           <label class="form-label">Código</label>
-          <input name="codigo" class="form-control" required>
+          <input name="codigo" id="fCodigo" class="form-control" required>
         </div>
         <div class="col-md-5">
           <label class="form-label">Nombre</label>
-          <input name="nombre" class="form-control" required>
+          <input name="nombre" id="fNombre" class="form-control" required>
         </div>
         <div class="col-md-2">
           <label class="form-label">Créditos</label>
-          <input type="number" name="creditos" class="form-control" value="4" required>
+          <input type="number" name="creditos" id="fCreditos" class="form-control" value="4" required>
         </div>
         <div class="col-md-2">
           <label class="form-label">Semestre</label>
-          <input type="number" name="semestre" class="form-control" value="1" required>
+          <input type="number" name="semestre" id="fSemestre" class="form-control" value="1" required>
         </div>
-        <div class="col-12">
-          <button class="btn btn-primary">Crear</button>
-          <span id="createMsg" class="ms-2 muted"></span>
+
+        <div class="col-12 d-flex gap-2">
+          <button id="btnSubmit" class="btn btn-primary" type="submit">Crear</button>
+          <button id="btnCancel" class="btn btn-outline-secondary d-none" type="button">Cancelar</button>
         </div>
       </form>
     </div>
@@ -163,25 +172,90 @@ document.getElementById('createBox').classList.toggle('d-none', !isAdmin);
 document.getElementById('listBox').classList.toggle('d-none', !isAdmin);
 if(!isAdmin){ /* corto aquí si no es admin */ }
 
-/* ===== UI y estado ===== */
+/* ===== Estado del formulario (crear/editar) ===== */
+let editingId = null;
+
+const form       = document.getElementById('createForm');
+const formTitle  = document.getElementById('formTitle');
+const editBadge  = document.getElementById('editingBadge');
+const btnSubmit  = document.getElementById('btnSubmit');
+const btnCancel  = document.getElementById('btnCancel');
+const msgCreate  = document.getElementById('createMsg');
+
+const fCodigo   = document.getElementById('fCodigo');
+const fNombre   = document.getElementById('fNombre');
+const fCreditos = document.getElementById('fCreditos');
+const fSemestre = document.getElementById('fSemestre');
+
+function enterCreateMode(){
+  editingId = null;
+  formTitle.textContent = 'Nueva materia';
+  editBadge.classList.add('d-none');
+  btnSubmit.textContent = 'Crear';
+  btnCancel.classList.add('d-none');
+  msgCreate.textContent = '';
+  form.reset();
+  // valores por defecto
+  fCreditos.value = fCreditos.value || 4;
+  fSemestre.value = fSemestre.value || 1;
+}
+
+function enterEditMode(m){
+  editingId = m._id;
+  formTitle.textContent = 'Editar materia';
+  editBadge.classList.remove('d-none');
+  btnSubmit.textContent = 'Actualizar';
+  btnCancel.classList.remove('d-none');
+  msgCreate.textContent = '';
+
+  fCodigo.value   = m.codigo ?? '';
+  fNombre.value   = m.nombre ?? '';
+  fCreditos.value = m.creditos ?? 0;
+  fSemestre.value = m.semestre ?? 1;
+
+  // Llevar foco a formulario
+  window.scrollTo({ top: form.getBoundingClientRect().top + window.scrollY - 80, behavior: 'smooth' });
+}
+
+btnCancel.addEventListener('click', enterCreateMode);
+
+/* ===== UI y listado ===== */
 const tbody = document.getElementById('tbody');
 document.getElementById('btnBuscar').onclick = load;
-document.getElementById('createForm').addEventListener('submit', onCreate);
+form.addEventListener('submit', onSubmit);
 
-/* Crear materia */
-async function onCreate(e){
+/* Crear/Actualizar materia (upsert) */
+async function onSubmit(e){
   e.preventDefault();
-  const fd = new FormData(e.target);
-  const body = Object.fromEntries(fd.entries());
-  body.creditos = Number(body.creditos);
-  body.semestre = Number(body.semestre);
+  msgCreate.textContent = '';
+
+  const body = {
+    codigo:   fCodigo.value.trim(),
+    nombre:   fNombre.value.trim(),
+    creditos: Number(fCreditos.value),
+    semestre: Number(fSemestre.value)
+  };
 
   try{
-    const data = await apiFetch('/api/materias', { method:'POST', body: JSON.stringify(body) });
-    document.getElementById('createMsg').textContent = 'Creada: ' + (data?.nombre || body.nombre);
-    e.target.reset();
+    if (editingId) {
+      // Actualizar
+      await apiFetch(`/api/materias/${editingId}`, {
+        method:'PUT',
+        body: JSON.stringify(body)
+      });
+      msgCreate.textContent = 'Materia actualizada';
+    } else {
+      // Crear
+      await apiFetch('/api/materias', {
+        method:'POST',
+        body: JSON.stringify(body)
+      });
+      msgCreate.textContent = 'Materia creada';
+    }
+
+    enterCreateMode();
     await load();
-  }catch(e){ /* error ya mostrado en modal */ }
+  }catch(e){ /* el modal ya mostró el error */ }
 }
 
 /* Listado */
@@ -195,18 +269,21 @@ async function load(){
   }catch(e){}
 }
 
-// Normaliza a string: "LUN 18:00-21:00; VIE 21:00-23:00"
+// Helpers de formato
 function horariosStr(m){
   const hs = (m.horarios||[]).map(h => `${h.dia} ${h.inicio}-${h.fin}`);
   return hs.length? hs.join('; ') : '—';
 }
-// Normaliza a string: "CURSO: Mat1; EXAMEN: Mat2"
+function nameOfPrevia(p){
+  const m = p?.materia;
+  if (!m) return '';
+  if (typeof m === 'string') return m;
+  if (typeof m === 'object') return m.nombre || m.codigo || m._id || '';
+  return String(m || '');
+}
 function previasStr(m){
-  const ps = (m.previas||[]).map(p=>{
-    const nom = (p.materia?.nombre || p.materiaNombre || p.materia || '');
-    return `${p.tipo}: ${nom}`;
-  });
-  return ps.length? ps.join('; ') : '—';
+  const ps = (m.previas || []).map(p => `${p.tipo}: ${nameOfPrevia(p)}`);
+  return ps.length ? ps.join('; ') : '—';
 }
 
 function render(rows){
@@ -272,15 +349,11 @@ function render(rows){
     tbody.appendChild(detail);
 
     // Acciones principales
+    tr.querySelector('[data-act=edit]').onclick = ()=> enterEditMode(m);
+
     tr.querySelector('[data-act=del]').onclick = async ()=>{
       if(!confirm('¿Eliminar '+m.nombre+'?')) return;
       try{ await apiFetch(`/api/materias/${m._id}`, { method:'DELETE' }); await load(); }catch(e){}
-    };
-    tr.querySelector('[data-act=edit]').onclick = async ()=>{
-      const nombre = prompt('Nombre', m.nombre); if(nombre==null) return;
-      const creditos = Number(prompt('Créditos', m.creditos)); if(!Number.isFinite(creditos)) return;
-      const semestre = Number(prompt('Semestre', m.semestre)); if(!Number.isFinite(semestre)) return;
-      try{ await apiFetch(`/api/materias/${m._id}`, { method:'PUT', body: JSON.stringify({ nombre, creditos, semestre }) }); await load(); }catch(e){}
     };
     tr.querySelector('[data-act=previas]').onclick = ()=> detail.querySelector('details').open = true;
     tr.querySelector('[data-act=horarios]').onclick = ()=> detail.querySelectorAll('details')[1].open = true;
@@ -346,7 +419,7 @@ function renderPrevias(m, ul){
   (m.previas||[]).forEach(p=>{
     const li = document.createElement('li');
     li.className='list-group-item d-flex justify-content-between align-items-center';
-    const nom = p.materia?.nombre || p.materiaNombre || p.materia || '';
+    const nom = nameOfPrevia(p);
     li.innerHTML = `<span><span class="badge text-bg-secondary me-2">${p.tipo}</span>${nom}</span>`;
     const b = document.createElement('button'); b.className='btn btn-sm btn-outline-danger'; b.textContent='Quitar';
     b.onclick = async ()=>{
@@ -400,7 +473,11 @@ async function ensureAllMaterias(){
 }
 
 /* init */
-(async ()=> { if(isAdmin){ await ensureAllMaterias(); await load(); }})();
+(function init(){
+  if(!isAdmin) return;
+  enterCreateMode();
+  ensureAllMaterias().then(load);
+})();
 </script>
 
 </body>
