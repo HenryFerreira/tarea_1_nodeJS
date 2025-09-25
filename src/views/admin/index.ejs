@@ -275,12 +275,25 @@ function horariosStr(m){
   return hs.length? hs.join('; ') : '—';
 }
 function nameOfPrevia(p){
+  // 1) Si el backend ya envía estos campos por el populate/serialización, usarlos
+  if (p?.materiaNombre) return p.materiaNombre;
+  if (p?.materiaCodigo) return p.materiaCodigo;
+
+  // 2) Si 'materia' viene como objeto poblado
   const m = p?.materia;
   if (!m) return '';
-  if (typeof m === 'string') return m;
   if (typeof m === 'object') return m.nombre || m.codigo || m._id || '';
+
+  // 3) Si 'materia' viene como string (ObjectId), intentar resolver a nombre
+  if (typeof m === 'string') {
+    const all = window.__allMaterias || [];
+    const found = all.find(x => String(x._id) === String(m));
+    return found ? (found.nombre || found.codigo || m) : m; // si no se encuentra, devolvemos el id
+  }
+
   return String(m || '');
 }
+
 function previasStr(m){
   const ps = (m.previas || []).map(p => `${p.tipo}: ${nameOfPrevia(p)}`);
   return ps.length ? ps.join('; ') : '—';
