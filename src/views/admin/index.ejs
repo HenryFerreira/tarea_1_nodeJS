@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Panel Admin — Materias</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body{background:#f7f7f9}
+    .muted{color:#6b7280}
+    .badge{font-weight:500}
+    details>summary{cursor:pointer}
+    .w-120{min-width:120px}
+  </style>
+</head>
+<body>
+<nav class="navbar navbar-dark" style="background:#0f172a">
+  <div class="container">
+    <div class="d-flex align-items-center w-100">
+      <span class="navbar-brand mb-0 h5">Panel de administración</span>
+      <a class="btn btn-outline-light btn-sm ms-auto" href="/logout">Salir</a>
+    </div>
+    <div class="text-light small">Gestión de materias, previas y horarios</div>
+  </div>
+</nav>
+
+<main class="container my-4">
+
+  <!-- Guard de acceso -->
+  <div id="guard" class="alert alert-warning d-none">
+    <h5 class="mb-2">Acceso restringido</h5>
+    <p class="mb-0">Necesitás iniciar sesión con un usuario <b>ADMIN</b> para gestionar el catálogo.</p>
+  </div>
+
+  <!-- Crear / Actualizar materia -->
+  <section id="createBox" class="card shadow-sm mb-4 d-none">
+    <div class="card-body">
+      <div class="d-flex align-items-center justify-content-between">
+        <h5 class="card-title mb-0">
+          <span id="formTitle">Nueva materia</span>
+          <span id="editingBadge" class="badge text-bg-warning ms-2 d-none">Editando…</span>
+        </h5>
+        <span id="createMsg" class="muted"></span>
+      </div>
+
+      <form id="createForm" class="row g-3 mt-1">
+        <!-- Guardamos el id cuando estamos editando -->
+        <input type="hidden" id="editingId" />
+
+        <div class="col-md-3">
+          <label class="form-label">Código</label>
+          <input name="codigo" id="fCodigo" class="form-control" required>
+        </div>
+        <div class="col-md-5">
+          <label class="form-label">Nombre</label>
+          <input name="nombre" id="fNombre" class="form-control" required>
+        </div>
+        <div class="col-md-2">
+          <label class="form-label">Créditos</label>
+          <input type="number" name="creditos" id="fCreditos" class="form-control" value="4" required>
+        </div>
+        <div class="col-md-2">
+          <label class="form-label">Semestre</label>
+          <input type="number" name="semestre" id="fSemestre" class="form-control" value="1" required>
+        </div>
+
+        <div class="col-12 d-flex gap-2">
+          <button id="btnSubmit" class="btn btn-primary" type="submit">Crear</button>
+          <button id="btnCancel" class="btn btn-outline-secondary d-none" type="button">Cancelar</button>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <!-- Listado -->
+  <section id="listBox" class="card shadow-sm d-none">
+    <div class="card-body">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="card-title mb-0">Materias</h5>
+        <div class="d-flex gap-2">
+          <input id="q" class="form-control" placeholder="buscar código/nombre" />
+          <button id="btnBuscar" class="btn btn-outline-secondary">Buscar</button>
+        </div>
+      </div>
+
+      <div class="table-responsive">
+        <table class="table align-middle">
+          <thead>
+            <tr>
+              <th class="w-120">Código</th>
+              <th>Nombre</th>
+              <th>Créditos</th>
+              <th>Sem.</th>
+              <th>Horarios</th>
+              <th>Previas</th>
+              <th class="text-end">Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+
+      <div id="listMsg" class="muted"></div>
+    </div>
+  </section>
+
+</main>
+
+<!-- Modal de error -->
+<div class="modal fade" id="errorModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header bg-danger text-white py-2">
+        <h6 class="modal-title">Ocurrió un error</h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body">
+        <p id="errorText" class="mb-0"></p>
+      </div>
+      <div class="modal-footer py-2">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cerrar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+/* ===== Helpers de sesión ===== */
+function token(){ return localStorage.getItem('access'); }
+function claims(){
+  const t = token(); if(!t) return null;
+  try{ return JSON.parse(atob(t.split('.')[1]||'')); }catch(e){ return null; }
+}
+
+/* ===== Modal de error reutilizable ===== */
+const errorModal = new bootstrap.Modal(document.getElementById('errorModal'));
+const errorText = document.getElementById('errorText');
+function showError(message){
+  errorText.textContent = message || 'Error inesperado';
+  errorModal.show();
+}
+
+/* ===== Fetch con token + manejo de errores ===== */
+async function apiFetch(url, opts={}){
+  const headers = {'Content-Type':'application/json', ...(opts.headers||{})};
+  const t = token();
+  if(t) headers.Authorization = 'Bearer ' + t;
+
+  let res, data = null;
+  try {
+    res = await fetch(url, {...opts, headers});
+  } catch(e) {
+    showError('No se pudo conectar con el servidor');
+    throw e;
+  }
+
+  try { data = await res.json(); } catch(e){ /* puede no traer JSON */ }
+
+  if(!res.ok){
+    const msg = (data && (data.error || data.message)) || `${res.status} ${res.statusText}`;
+    showError(msg);
+    throw new Error(msg);
+  }
+  return data;
+}
+
+/* ===== Guard de ADMIN en cliente ===== */
+const isAdmin = (claims()?.rol === 'ADMIN');
+document.getElementById('guard').classList.toggle('d-none', isAdmin);
+document.getElementById('createBox').classList.toggle('d-none', !isAdmin);
+document.getElementById('listBox').classList.toggle('d-none', !isAdmin);
+if(!isAdmin){ /* corto aquí si no es admin */ }
+
+/* ===== Estado del formulario (crear/editar) ===== */
+let editingId = null;
+
+const form       = document.getElementById('createForm');
+const formTitle  = document.getElementById('formTitle');
+const editBadge  = document.getElementById('editingBadge');
+const btnSubmit  = document.getElementById('btnSubmit');
+const btnCancel  = document.getElementById('btnCancel');
+const msgCreate  = document.getElementById('createMsg');
+
+const fCodigo   = document.getElementById('fCodigo');
+const fNombre   = document.getElementById('fNombre');
+const fCreditos = document.getElementById('fCreditos');
+const fSemestre = document.getElementById('fSemestre');
+
+function enterCreateMode(){
+  editingId = null;
+  formTitle.textContent = 'Nueva materia';
+  editBadge.classList.add('d-none');
+  btnSubmit.textContent = 'Crear';
+  btnCancel.classList.add('d-none');
+  msgCreate.textContent = '';
+  form.reset();
+  // valores por defecto
+  fCreditos.value = fCreditos.value || 4;
+  fSemestre.value = fSemestre.value || 1;
+}
+
+function enterEditMode(m){
+  editingId = m._id;
+  formTitle.textContent = 'Editar materia';
+  editBadge.classList.remove('d-none');
+  btnSubmit.textContent = 'Actualizar';
+  btnCancel.classList.remove('d-none');
+  msgCreate.textContent = '';
+
+  fCodigo.value   = m.codigo ?? '';
+  fNombre.value   = m.nombre ?? '';
+  fCreditos.value = m.creditos ?? 0;
+  fSemestre.value = m.semestre ?? 1;
+
+  // Llevar foco a formulario
+  window.scrollTo({ top: form.getBoundingClientRect().top + window.scrollY - 80, behavior: 'smooth' });
+}
+
+btnCancel.addEventListener('click', enterCreateMode);
+
+/* ===== UI y listado ===== */
+const tbody = document.getElementById('tbody');
+document.getElementById('btnBuscar').onclick = load;
+form.addEventListener('submit', onSubmit);
+
+/* Crear/Actualizar materia (upsert) */
+async function onSubmit(e){
+  e.preventDefault();
+  msgCreate.textContent = '';
+
+  const body = {
+    codigo:   fCodigo.value.trim(),
+    nombre:   fNombre.value.trim(),
+    creditos: Number(fCreditos.value),
+    semestre: Number(fSemestre.value)
+  };
+
+  try{
+    if (editingId) {
+      // Actualizar
+      await apiFetch(`/api/materias/${editingId}`, {
+        method:'PUT',
+        body: JSON.stringify(body)
+      });
+      msgCreate.textContent = 'Materia actualizada';
+    } else {
+      // Crear
+      await apiFetch('/api/materias', {
+        method:'POST',
+        body: JSON.stringify(body)
+      });
+      msgCreate.textContent = 'Materia creada';
+    }
+
+    enterCreateMode();
+    await load();
+  }catch(e){ /* el modal ya mostró el error */ }
+}
+
+/* Listado */
+async function load(){
+  const q = document.getElementById('q').value.trim();
+  const url = '/api/materias' + (q ? ('?q='+encodeURIComponent(q)) : '');
+  try{
+    const data = await apiFetch(url);
+    const items = Array.isArray(data.items)? data.items : (Array.isArray(data)? data : []);
+    render(items);
+  }catch(e){}
+}
+
+// Helpers de formato
+function horariosStr(m){
+  const hs = (m.horarios||[]).map(h => `${h.dia} ${h.inicio}-${h.fin}`);
+  return hs.length? hs.join('; ') : '—';
+}
+function nameOfPrevia(p){
+  // 1) Si el backend ya envía estos campos por el populate/serialización, usarlos
+  if (p?.materiaNombre) return p.materiaNombre;
+  if (p?.materiaCodigo) return p.materiaCodigo;
+
+  // 2) Si 'materia' viene como objeto poblado
+  const m = p?.materia;
+  if (!m) return '';
+  if (typeof m === 'object') return m.nombre || m.codigo || m._id || '';
+
+  // 3) Si 'materia' viene como string (ObjectId), intentar resolver a nombre
+  if (typeof m === 'string') {
+    const all = window.__allMaterias || [];
+    const found = all.find(x => String(x._id) === String(m));
+    return found ? (found.nombre || found.codigo || m) : m; // si no se encuentra, devolvemos el id
+  }
+
+  return String(m || '');
+}
+
+function previasStr(m){
+  const ps = (m.previas || []).map(p => `${p.tipo}: ${nameOfPrevia(p)}`);
+  return ps.length ? ps.join('; ') : '—';
+}
+
+function render(rows){
+  tbody.innerHTML='';
+  rows.forEach(m=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><b>${m.codigo}</b></td>
+      <td>${m.nombre}</td>
+      <td>${m.creditos}</td>
+      <td>${m.semestre}</td>
+      <td>${horariosStr(m)}</td>
+      <td>${previasStr(m)}</td>
+      <td class="text-end">
+        <button class="btn btn-sm btn-outline-secondary me-1" data-act="edit">Editar</button>
+        <button class="btn btn-sm btn-outline-primary me-1" data-act="previas">Previas</button>
+        <button class="btn btn-sm btn-outline-primary me-1" data-act="horarios">Horarios</button>
+        <button class="btn btn-sm btn-danger" data-act="del">Eliminar</button>
+      </td>
+    `;
+    tbody.appendChild(tr);
+
+    const detail = document.createElement('tr');
+    const cell = document.createElement('td'); cell.colSpan = 7;
+    cell.innerHTML = `
+      <div class="row g-3">
+        <div class="col-md-6">
+          <details>
+            <summary><b>Gestionar previas</b></summary>
+            <div class="mt-2">
+              <div class="d-flex gap-2 mb-2">
+                <select class="form-select w-120" data-role="tipo">
+                  <option value="CURSO">CURSO</option>
+                  <option value="EXAMEN">EXAMEN</option>
+                </select>
+                <select class="form-select" data-role="materiaPrev"></select>
+                <button class="btn btn-outline-primary" data-role="addPrevia">Agregar</button>
+              </div>
+              <ul class="list-group small" data-role="previas"></ul>
+            </div>
+          </details>
+        </div>
+        <div class="col-md-6">
+          <details>
+            <summary><b>Gestionar horarios</b></summary>
+            <div class="mt-2">
+              <div class="d-flex gap-2 mb-2">
+                <select class="form-select w-120" data-role="dia">
+                  <option>LUN</option><option>MAR</option><option>MIE</option>
+                  <option>JUE</option><option>VIE</option><option>SAB</option>
+                </select>
+                <input class="form-control" type="time" data-role="inicio">
+                <input class="form-control" type="time" data-role="fin">
+                <button class="btn btn-outline-primary" data-role="addHorario">Agregar</button>
+              </div>
+              <ul class="list-group small" data-role="horarios"></ul>
+            </div>
+          </details>
+        </div>
+      </div>
+    `;
+    detail.appendChild(cell);
+    tbody.appendChild(detail);
+
+    // Acciones principales
+    tr.querySelector('[data-act=edit]').onclick = ()=> enterEditMode(m);
+
+    tr.querySelector('[data-act=del]').onclick = async ()=>{
+      if(!confirm('¿Eliminar '+m.nombre+'?')) return;
+      try{ await apiFetch(`/api/materias/${m._id}`, { method:'DELETE' }); await load(); }catch(e){}
+    };
+    tr.querySelector('[data-act=previas]').onclick = ()=> detail.querySelector('details').open = true;
+    tr.querySelector('[data-act=horarios]').onclick = ()=> detail.querySelectorAll('details')[1].open = true;
+
+    // ====== gestión PREVIAS ======
+    const prevBox = detail.querySelector('[data-role=previas]');
+    const tipoSel = detail.querySelector('[data-role=tipo]');
+    const matSel  = detail.querySelector('[data-role=materiaPrev]');
+    const addPrev = detail.querySelector('[data-role=addPrevia]');
+
+    addPrev.onclick = async ()=>{
+      const tipo = tipoSel.value;
+      const materiaPreviaId = matSel.value;
+      try{
+        await apiFetch(`/api/materias/${m._id}/previas`, {
+          method:'POST', body: JSON.stringify({ tipo, materiaPreviaId })
+        });
+        await refreshMateria(m);
+        renderPrevias(m, prevBox);
+        tr.children[5].textContent = previasStr(m);
+      }catch(e){}
+    };
+
+    // ====== gestión HORARIOS ======
+    const horBox = detail.querySelector('[data-role=horarios]');
+    const diaSel = detail.querySelector('[data-role=dia]');
+    const iniInp = detail.querySelector('[data-role=inicio]');
+    const finInp = detail.querySelector('[data-role=fin]');
+    const addHor  = detail.querySelector('[data-role=addHorario]');
+
+    addHor.onclick = async ()=>{
+      const dia = diaSel.value, inicio = iniInp.value, fin = finInp.value;
+      if(!inicio || !fin) return showError('Elegí horarios');
+      try{
+        await apiFetch(`/api/materias/${m._id}/horarios`, {
+          method:'POST', body: JSON.stringify({ dia, inicio, fin })
+        });
+        await refreshMateria(m);
+        renderHorarios(m, horBox);
+        tr.children[4].textContent = horariosStr(m);
+      }catch(e){}
+    };
+
+    // al abrir detalles, popular selects y listas
+    detail.querySelectorAll('details').forEach(d=>{
+      d.addEventListener('toggle', async ()=>{
+        if(d.open){
+          try{
+            await refreshMateria(m);
+            await ensureAllMaterias();
+            matSel.innerHTML = window.__allMaterias.map(x=>`<option value="${x._id}">${x.codigo} - ${x.nombre}</option>`).join('');
+            renderPrevias(m, prevBox);
+            renderHorarios(m, horBox);
+          }catch(e){}
+        }
+      });
+    });
+  });
+}
+
+function renderPrevias(m, ul){
+  ul.innerHTML='';
+  (m.previas||[]).forEach(p=>{
+    const li = document.createElement('li');
+    li.className='list-group-item d-flex justify-content-between align-items-center';
+    const nom = nameOfPrevia(p);
+    li.innerHTML = `<span><span class="badge text-bg-secondary me-2">${p.tipo}</span>${nom}</span>`;
+    const b = document.createElement('button'); b.className='btn btn-sm btn-outline-danger'; b.textContent='Quitar';
+    b.onclick = async ()=>{
+      const materiaPreviaId = p.materia?._id || p.materia;
+      try{
+        await apiFetch(`/api/materias/${m._id}/previas`, {
+          method:'DELETE', body: JSON.stringify({ tipo:p.tipo, materiaPreviaId })
+        });
+        await refreshMateria(m);
+        renderPrevias(m, ul);
+      }catch(e){}
+    };
+    li.appendChild(b);
+    ul.appendChild(li);
+  });
+}
+
+function renderHorarios(m, ul){
+  ul.innerHTML='';
+  (m.horarios||[]).forEach(h=>{
+    const li = document.createElement('li');
+    li.className='list-group-item d-flex justify-content-between align-items-center';
+    li.innerHTML = `<span>${h.dia} ${h.inicio}-${h.fin}</span>`;
+    const b = document.createElement('button'); b.className='btn btn-sm btn-outline-danger'; b.textContent='Quitar';
+    b.onclick = async ()=>{
+      try{
+        await apiFetch(`/api/materias/${m._id}/horarios`, {
+          method:'DELETE', body: JSON.stringify({ dia:h.dia, inicio:h.inicio, fin:h.fin })
+        });
+        await refreshMateria(m);
+        renderHorarios(m, ul);
+      }catch(e){}
+    };
+    li.appendChild(b);
+    ul.appendChild(li);
+  });
+}
+
+// Refresca una materia puntual consultando por código
+async function refreshMateria(m){
+  const data = await apiFetch('/api/materias?q='+encodeURIComponent(m.codigo));
+  const found = (data.items||[]).find(x=>x._id===m._id) || (Array.isArray(data)? data.find(x=>x._id===m._id) : null);
+  if(found){ Object.assign(m, found); }
+}
+
+// cache para selector de previas
+async function ensureAllMaterias(){
+  if(window.__allMaterias) return;
+  const data = await apiFetch('/api/materias?limit=1000&page=1');
+  window.__allMaterias = (data.items || data || []);
+}
+
+/* init */
+(function init(){
+  if(!isAdmin) return;
+  enterCreateMode();
+  ensureAllMaterias().then(load);
+})();
+</script>
+
+</body>
+</html>
