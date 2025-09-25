@@ -1,73 +1,51 @@
-const express = require("express");
-const bodyParser = require("body-parser");
-const mongoose = require("mongoose");
-const morgan = require("morgan");
-const path = require("path");
+// ------------------------------
+//  Core & setup
+// ------------------------------
+const express   = require("express");
+const bodyParser= require("body-parser");
+const mongoose  = require("mongoose");
+const morgan    = require("morgan");
+const path      = require("path");
+const cors      = require("cors");
 
-// 1) Cargar variables de entorno temprano
+// Cargar .env lo más temprano posible
 require("dotenv").config({ path: path.resolve(process.cwd(), ".env") });
 
-const { logger } = require("./src/logger/logger");
-const requestId = require("./src/middlewares/requestId");
-const bus = require("./src/events/bus");
+const { logger }   = require("./src/logger/logger");
+const requestId    = require("./src/middlewares/requestId");
+const bus          = require("./src/events/bus");
 const { initSocket } = require("./src/sockets/socket");
-const cors = require("cors");
 
-
-const historial = require("./src/routes/historial.route");
-const usuario = require("./src/routes/usuario.route");
-const materia = require("./src/routes/materias.route");
-const auth = require("./src/routes/auth.routes");
+// Routers (API)
+const auth         = require("./src/routes/auth.routes");
 const elegibilidad = require("./src/routes/elegibilidad.routes");
-const seleccion = require("./src/routes/seleccion.routes");
-const uiRoutes = require('./src/routes/ui.routes');   // 🆕 vistas EJS
+const seleccion    = require("./src/routes/seleccion.routes");
+const usuario      = require("./src/routes/usuario.route");
+const materia      = require("./src/routes/materias.route");
+const historial    = require("./src/routes/historial.route");
 
-const app = express();
+// Routers (UI - EJS)
+const uiRoutes     = require("./src/routes/ui.routes");
 
-// ---- middleware base ----
-app.use(requestId); // req.id para correlacionar logs
+// App
+const app  = express();
+const PORT = process.env.PORT || 3000;
+
+// ------------------------------
+//  Middlewares globales
+// ------------------------------
+app.use(requestId);                                // ID por request para trazabilidad
 app.use((req, res, next) => { res.locals.reqId = req.id; next(); });
 
-// Logs HTTP (morgan) → winston
 morgan.token("id", (req) => req.id);
 const httpFormat = ':id :method :url :status :res[content-length] - :response-time ms';
 app.use(morgan(httpFormat, { stream: logger.stream }));
-
-// CONEXIÓN A MONGO
-// 2) Tomar valores desde process.env (con defaults si querés)
-const MONGO_URI = process.env.MONGO_URI;
-const PORT = process.env.PORT || 3000;
-
-// 3) Validar que exista la URI
-if (!MONGO_URI) {
-  console.error("❌ Falta MONGO_URI en .env");
-  process.exit(1);
-}
-
-// 4) Conexión a Mongo (podés pasar dbName si tu URI no lo trae)
-mongoose
-  .connect(MONGO_URI, {
-    // dbName: process.env.MONGO_DB_NAME, // opcional si no está en la URI
-    serverSelectionTimeoutMS: 8000,
-  })
-  .then(() => console.log("✅ Conectado a MongoDB Atlas"))
-  .catch((err) => {
-    console.error("❌ Error de conexión:", err);
-    process.exit(1);
-  });
-
-
-mongoose.Promise = global.Promise;
-const db = mongoose.connection;
-db.on("error", console.error.bind(console, "MongoDB connection error:"));
-db.once("open", () => console.log("MongoDB conectado"));
 
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: false }));
 
 const origins = (process.env.CORS_ORIGIN || "*")
   .split(",").map(s => s.trim()).filter(Boolean);
-
 app.use(cors({
   origin: origins,
   credentials: true,
@@ -75,66 +53,85 @@ app.use(cors({
   allowedHeaders: ["Content-Type","Authorization"]
 }));
 
-app.use(express.static("src/public")); // sirve /ws-test.html
+// ------------------------------
+//  Vistas (EJS) + estáticos
+// ------------------------------
+app.set("view engine", "ejs");
+app.set("views", path.join(__dirname, "src", "views"));
+app.use(express.static(path.join(__dirname, "src", "public"))); // (sirve /ws-test.html, css, js, etc.)
 
-// RUTAS
-//app.use("/products", product);
-app.use("/historial", historial);
-app.use("/usuario", usuario);
-app.use("/materia", materia);
-app.use("/auth", auth);
-app.use("/elegibilidad", elegibilidad);
-app.use("/seleccion", seleccion);
-app.use('/', uiRoutes);                 // 🆕 vistas: "/", "/admin"
+// ------------------------------
+//  Rutas UI (montar primero)
+// ------------------------------
+app.use("/", uiRoutes);   // "/", "/login", "/register", "/logout", "/admin", ...
 
+// ------------------------------
+//  Rutas API (con prefijos estables)
+//   - Estos prefijos evitan choques con la UI y son los que usa el front:
+//     /auth/*, /elegibilidad, /seleccion, /api/usuarios, /api/materias, /api/historial
+// ------------------------------
+app.use("/auth",          auth);
+app.use("/elegibilidad",  elegibilidad);
+app.use("/seleccion",     seleccion);
+app.use("/api/usuarios",  usuario);
+app.use("/api/materias",  materia);
+app.use("/api/historial", historial);
 
-// ---- listeners de eventos de dominio ----
+// ------------------------------
+//  Eventos de dominio (logs)
+// ------------------------------
 bus.on("materia:creada", (payload) => {
   logger.info("materia:creada", { reqId: payload.reqId, materiaId: payload.materiaId, userId: payload.userId });
 });
-
 bus.on("historial:actualizado", (payload) => {
-  logger.info("historial:actualizado", { 
-    reqId: payload.reqId, 
-    usuario: payload.usuarioId,
-    materia: payload.materiaId, 
-    estado: payload.estado 
+  logger.info("historial:actualizado", {
+    reqId: payload.reqId, usuario: payload.usuarioId, materia: payload.materiaId, estado: payload.estado
   });
 });
-
 bus.on("auth:login", (payload) => {
   logger.info("auth:login", { reqId: payload.reqId, userId: payload.userId });
 });
 
-// ---- manejador de errores central ----
+// ------------------------------
+//  Manejo de errores central
+// ------------------------------
 app.use((err, req, res, next) => {
   logger.error("Unhandled error", { reqId: req.id, err });
   res.status(err.status || 500).json({ error: "Internal Server Error", reqId: req.id });
 });
 
-
-// ---- errores no atrapados a nivel proceso ----
-process.on("unhandledRejection", (reason) => logger.error("unhandledRejection", { err: reason }));
-process.on("uncaughtException", (err) => {
-  logger.error("uncaughtException", { err });
+// ------------------------------
+//  Conexión a MongoDB
+// ------------------------------
+const MONGO_URI = process.env.MONGO_URI;
+if (!MONGO_URI) {
+  console.error("❌ Falta MONGO_URI en .env");
   process.exit(1);
-});
+}
 
+mongoose
+  .connect(MONGO_URI, { serverSelectionTimeoutMS: 8000 /*, dbName: process.env.MONGO_DB_NAME*/ })
+  .then(() => console.log("✅ Conectado a MongoDB Atlas"))
+  .catch((err) => {
+    console.error("❌ Error de conexión:", err);
+    process.exit(1);
+  });
 
-// Vistas
-app.set('view engine', 'ejs');
-app.set('views', path.join(__dirname, 'src', 'views'));
-app.use(express.static(path.join(__dirname, 'src', 'public')));
+mongoose.Promise = global.Promise;
+const db = mongoose.connection;
+db.on("error", console.error.bind(console, "MongoDB connection error:"));
+db.once("open", () => console.log("MongoDB conectado"));
 
-// 1) Crear httpServer
+// ------------------------------
+//  HTTP + Socket.IO
+// ------------------------------
 const http = require("http");
 const httpServer = http.createServer(app);
+const io = initSocket(httpServer); // (se exporta si querés usar luego)
 
-// 2) Inicializar Socket.IO
-const io = initSocket(httpServer); // devuelve instancia por si la querés usar
-
-// ---- server ----
-// 3) Levantar server
+// ------------------------------
+//  Start
+// ------------------------------
 httpServer.listen(PORT, () => {
   console.log(`Servidor arriba en http://localhost:${PORT}`);
 });
