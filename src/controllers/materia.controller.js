@@ -5,7 +5,7 @@
  *   * Manejo de E11000 (código duplicado)
  *   * Logs (winston) con reqId para correlación
  *   * Eventos de dominio (bus.emit) para auditoría/tiempo real
- *   * Populate selectivo al consultar
+ *   * Populate selectivo al consultar (previas.materia)
  */
 const { Types } = require("mongoose");
 const Materia = require("../models/materia.model");
@@ -28,14 +28,24 @@ function horarioValido({ dia, inicio, fin }) {
   return toMinutes(inicio) < toMinutes(fin);
 }
 
-// Serializador público (respeta populate si viene cargado)
+// Populate consistente para previas.materia
+const populatePrevias = (q) =>
+  q.populate({ path: "previas.materia", select: "codigo nombre semestre" });
+
+// Serializador público: salida estable para el front
 function toPublicMateria(m) {
-  const previas = (m.previas || []).map(p => ({
-    tipo: p.tipo,
-    materia: (p.materia && typeof p.materia === "object")
-      ? { _id: p.materia._id, codigo: p.materia.codigo, nombre: p.materia.nombre, semestre: p.materia.semestre }
-      : p.materia
-  }));
+  const previas = (m.previas || []).map((p) => {
+    const mm = p.materia;
+    return {
+      tipo: p.tipo,
+      // siempre devolvemos un id en "materia"
+      materia: mm && mm._id ? mm._id : mm,
+      // y si vino poblado, sumamos nombre/código
+      materiaNombre: mm && mm.nombre ? mm.nombre : undefined,
+      materiaCodigo: mm && mm.codigo ? mm.codigo : undefined,
+    };
+  });
+
   return {
     _id: m._id,
     codigo: m.codigo,
@@ -45,7 +55,7 @@ function toPublicMateria(m) {
     horarios: m.horarios || [],
     previas,
     createdAt: m.createdAt,
-    updatedAt: m.updatedAt
+    updatedAt: m.updatedAt,
   };
 }
 
@@ -75,25 +85,15 @@ exports.materia_create = async (req, res, next) => {
     }
 
     const doc = await Materia.create({ codigo, nombre, creditos, semestre, horarios, previas });
+    await doc.populate({ path: "previas.materia", select: "codigo nombre semestre" });
 
-    bus.emit("materia:creada", { 
-      reqId: req.id, 
-      materiaId: doc._id.toString(), 
-      codigo: doc.codigo 
-    });
-    logger.info("Materia creada", { 
-      reqId: req.id,
-      materiaId: doc._id.toString(), 
-      codigo: doc.codigo 
-    });
+    bus.emit("materia:creada", { reqId: req.id, materiaId: doc._id.toString(), codigo: doc.codigo });
+    logger.info("Materia creada", { reqId: req.id, materiaId: doc._id.toString(), codigo: doc.codigo });
 
     res.status(201).json(toPublicMateria(doc));
   } catch (err) {
     if (err?.code === 11000) {
-      logger.warn("Código de materia duplicado", { 
-        reqId: req.id, 
-        codigo: req.body?.codigo 
-      });
+      logger.warn("Código de materia duplicado", { reqId: req.id, codigo: req.body?.codigo });
       return res.status(409).json({ error: "El código de la materia ya existe", reqId: req.id });
     }
     next(err);
@@ -116,7 +116,7 @@ exports.materia_list = async (req, res, next) => {
     let sort = { semestre: 1, codigo: 1 };
 
     if (q && q.trim()) {
-      query.$text = { $search: q.trim() };           // <- TOP-LEVEL, sin $or
+      query.$text = { $search: q.trim() }; // TOP-LEVEL
       projection = { score: { $meta: "textScore" } };
       sort = { score: { $meta: "textScore" }, semestre: 1, codigo: 1 };
     }
@@ -124,12 +124,18 @@ exports.materia_list = async (req, res, next) => {
     const perPage = Math.min(Number(limit) || 50, 100);
     const skip = (Math.max(Number(page) || 1, 1) - 1) * perPage;
 
+    const baseFind = Materia.find(query, projection).sort(sort).skip(skip).limit(perPage);
     const [items, total] = await Promise.all([
-      Materia.find(query, projection).sort(sort).skip(skip).limit(perPage).lean(),
+      populatePrevias(baseFind).lean(),
       Materia.countDocuments(query),
     ]);
 
-    res.json({ total, page: Number(page) || 1, limit: perPage, items: items.map(toPublicMateria) });
+    res.json({
+      total,
+      page: Number(page) || 1,
+      limit: perPage,
+      items: items.map(toPublicMateria),
+    });
   } catch (err) {
     next(err);
   }
@@ -146,18 +152,12 @@ exports.materia_by_id = async (req, res, next) => {
       return res.status(400).json({ error: "ID inválido", reqId: req.id });
     }
 
-    const doc = await Materia.findById(id)
-      .populate("previas.materia", "codigo nombre semestre")
-      .lean();
-
+    const doc = await populatePrevias(Materia.findById(id)).lean();
     if (!doc) {
       return res.status(404).json({ error: "Materia no encontrada", reqId: req.id });
     }
 
-    logger.info("Materia consultada", { 
-      reqId: req.id,
-      materiaId: id 
-    });
+    logger.info("Materia consultada", { reqId: req.id, materiaId: id });
     res.json(toPublicMateria(doc));
   } catch (err) {
     next(err);
@@ -207,25 +207,15 @@ exports.materia_update = async (req, res, next) => {
     }
 
     await doc.save();
+    await doc.populate({ path: "previas.materia", select: "codigo nombre semestre" });
 
-    bus.emit("materia:actualizada", { 
-      reqId: req.id, 
-      materiaId: doc._id.toString(), 
-      cambios: Object.keys(req.body) 
-    });
-    logger.info("Materia actualizada", { 
-      reqId: req.id, 
-      materiaId: doc._id.toString(), 
-      cambios: Object.keys(req.body) 
-    });
+    bus.emit("materia:actualizada", { reqId: req.id, materiaId: doc._id.toString(), cambios: Object.keys(req.body) });
+    logger.info("Materia actualizada", { reqId: req.id, materiaId: doc._id.toString(), cambios: Object.keys(req.body) });
 
     res.json(toPublicMateria(doc));
   } catch (err) {
     if (err?.code === 11000) {
-      logger.warn("Intento de actualizar con código duplicado", { 
-        reqId: req.id, 
-        codigo: req.body?.codigo 
-      });
+      logger.warn("Intento de actualizar con código duplicado", { reqId: req.id, codigo: req.body?.codigo });
       return res.status(409).json({ error: "El código de la materia ya existe", reqId: req.id });
     }
     next(err);
@@ -248,17 +238,10 @@ exports.materia_delete = async (req, res, next) => {
       return res.status(404).json({ error: "Materia no encontrada", reqId: req.id });
     }
 
-    bus.emit("materia:eliminada", { 
-      reqId: req.id, 
-      materiaId: doc._id.toString(), 
-      codigo: doc.codigo 
-    });
-    logger.info("Materia eliminada", { 
-      reqId: req.id, 
-      materiaId: doc._id.toString(), 
-      codigo: doc.codigo 
-    });
+    bus.emit("materia:eliminada", { reqId: req.id, materiaId: doc._id.toString(), codigo: doc.codigo });
+    logger.info("Materia eliminada", { reqId: req.id, materiaId: doc._id.toString(), codigo: doc.codigo });
 
+    // Aunque está eliminada, devolvemos su representación pública (sin populate ya no hace falta)
     res.json({ ok: true, eliminado: toPublicMateria(doc) });
   } catch (err) {
     next(err);
@@ -294,18 +277,10 @@ exports.materia_add_previa = async (req, res, next) => {
       await doc.save();
     }
 
-    bus.emit("materia:previa_agregada", { 
-      reqId: req.id, 
-      materiaId: id, 
-      previaTipo: tipo, 
-      previaMateriaId: materiaPreviaId 
-    });
-    logger.info("Previa agregada", { 
-      reqId: req.id, 
-      materiaId: id, 
-      tipo, 
-      previa: materiaPreviaId 
-    });
+    await doc.populate({ path: "previas.materia", select: "codigo nombre semestre" });
+
+    bus.emit("materia:previa_agregada", { reqId: req.id, materiaId: id, previaTipo: tipo, previaMateriaId: materiaPreviaId });
+    logger.info("Previa agregada", { reqId: req.id, materiaId: id, tipo, previa: materiaPreviaId });
 
     res.json(toPublicMateria(doc));
   } catch (err) {
@@ -337,19 +312,11 @@ exports.materia_remove_previa = async (req, res, next) => {
     doc.previas = doc.previas.filter(p => !(p.tipo === tipo && String(p.materia) === String(materiaPreviaId)));
     if (doc.previas.length !== prevCount) {
       await doc.save();
-      bus.emit("materia:previa_eliminada", { 
-        reqId: req.id, 
-        materiaId: id, 
-        previaTipo: tipo, 
-        previaMateriaId: materiaPreviaId 
-      });
-      logger.info("Previa eliminada", { 
-        reqId: req.id, 
-        materiaId: id, 
-        tipo, 
-        previa: materiaPreviaId 
-      });
+      bus.emit("materia:previa_eliminada", { reqId: req.id, materiaId: id, previaTipo: tipo, previaMateriaId: materiaPreviaId });
+      logger.info("Previa eliminada", { reqId: req.id, materiaId: id, tipo, previa: materiaPreviaId });
     }
+
+    await doc.populate({ path: "previas.materia", select: "codigo nombre semestre" });
 
     res.json(toPublicMateria(doc));
   } catch (err) {
@@ -384,15 +351,10 @@ exports.materia_add_horario = async (req, res, next) => {
       await doc.save();
     }
 
-    bus.emit("materia:horario_agregado", { 
-      reqId: req.id, 
-      materiaId: id, 
-      horario: h });
-    logger.info("Horario agregado", { 
-      reqId: req.id, 
-      materiaId: id, 
-      horario: h 
-    });
+    await doc.populate({ path: "previas.materia", select: "codigo nombre semestre" });
+
+    bus.emit("materia:horario_agregado", { reqId: req.id, materiaId: id, horario: h });
+    logger.info("Horario agregado", { reqId: req.id, materiaId: id, horario: h });
 
     res.json(toPublicMateria(doc));
   } catch (err) {
@@ -425,17 +387,11 @@ exports.materia_remove_horario = async (req, res, next) => {
     doc.horarios = doc.horarios.filter(x => !(x.dia === dia && x.inicio === inicio && x.fin === fin));
     if (doc.horarios.length !== before) {
       await doc.save();
-      bus.emit("materia:horario_eliminado", { 
-        reqId: req.id,
-        materiaId: id, 
-        horario: h 
-      });
-      logger.info("Horario eliminado", { 
-        reqId: req.id, 
-        materiaId: id, 
-        horario: h 
-      });
+      bus.emit("materia:horario_eliminado", { reqId: req.id, materiaId: id, horario: h });
+      logger.info("Horario eliminado", { reqId: req.id, materiaId: id, horario: h });
     }
+
+    await doc.populate({ path: "previas.materia", select: "codigo nombre semestre" });
 
     res.json(toPublicMateria(doc));
   } catch (err) {
