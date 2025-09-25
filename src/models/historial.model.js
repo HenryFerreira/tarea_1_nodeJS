@@ -12,10 +12,11 @@ const HistorialSchema = new Schema({
   // - PENDIENTE: aún no cursó.
   // - EN_CURSO: la está cursando.
   // - CURSADO: curso aprobado (sin examen final aprobado).
+  // - A_EXAMEN: ya cursó y está en instancia de examen.
   // - APROBADO: aprobó examen final (o equivalente).
   estado: { 
     type: String, 
-    enum: ['PENDIENTE','EN_CURSO','CURSADO','APROBADO'], 
+    enum: ['PENDIENTE','EN_CURSO','CURSADO','A_EXAMEN','APROBADO'], 
     required: true,
     default: 'PENDIENTE'
   },
