@@ -455,9 +455,29 @@
                         body: JSON.stringify({ materias: seleccionadas })
                     });
                     if (vr?.resumen?.conflictos > 0) {
+
                         const detalle = Array.isArray(vr?.conflictos)
-                            ? `<pre>${vr.conflictos.map(c => `• ${c.mensaje || c.detalle || JSON.stringify(c)}`).join('\n')}</pre>`
-                            : '';
+                        ? `<div>${
+                            vr.conflictos.map(c => {
+                                const d = c.dia || c.día || c.day || '';
+                                const A = c.a || c.A || c.m1 || {};
+                                const B = c.b || c.B || c.m2 || {};
+                                const aNom = A.nombre || A.codigo || A.materia || '';
+                                const bNom = B.nombre || B.codigo || B.materia || '';
+                                const aIni = A.inicio || A.horaInicio || A.desde || '';
+                                const aFin = A.fin   || A.horaFin   || A.hasta || '';
+                                const bIni = B.inicio || B.horaInicio || B.desde || '';
+                                const bFin = B.fin   || B.horaFin   || B.hasta || '';
+                                return `
+                                <div>
+                                    ${aNom} | Horario: ${d} ${aIni} - ${aFin}<br>
+                                    ${bNom} | Horario: ${d} ${bIni} - ${bFin}
+                                </div>
+                                `;
+                            }).join('<hr style="border:none;border-top:1px solid #eee;margin:.5rem 0" />')
+                        }</div>`
+                        : '';
+
                         const ok = await confirmDialog(
                             `<p>Se detectaron <b>${vr.resumen.conflictos}</b> conflicto(s) de horario.</p>${detalle}<p>¿Deseás continuar igualmente?</p>`
                         );
